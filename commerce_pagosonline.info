@@ -1,0 +1,4 @@
+name = Commerce Pagos ONLINE
+core = 7.x
+description = Pagos ONLINE
+package = Payment Commerce

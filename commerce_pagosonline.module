@@ -1,0 +1,198 @@
+<?php
+define ('URL_SERVER', 'https://gateway.pagosonline.net/apps/gateway/index.html');
+define ('URL_SERVER_TEST', 'https://gateway2.pagosonline.net/apps/gateway/index.html');
+/*
+ * Implements hook_permission(). 
+ */
+function commerce_pagosonline_permission() {
+  $perm = array(
+    'pagosonline settings' => array(
+      'title' => 'Settings Pagos Online'
+    ),
+    'pagosonline detail transaction' => array(
+      'title' => 'View Details Transaction'
+    ),
+  );
+  return $perm;
+}
+
+/*
+ * Implements hook_menu().
+ */
+
+function commerce_pagosonline_menu() {
+  $menu = array();
+  
+  $menu['admin/pagosonline/settings'] = array(
+    'title' => t('Settings Pagosonline'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_pagosonline_form_settings'),
+    'access arguments' => array('pagosonline settings'),
+    'type' => MENU_CALLBACK,
+  );
+  $menu['pagosonline/response/%/%/%'] = array(
+    'page callback' => 'commerce_pagosonline_response',
+    'page arguments' => array(2, 3, 4), //$order_id, $sale_reference, $option
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+    'file' => 'commerce_pagosonline.inc',    
+  );
+  $menu['pagosonline/confirmation/%/%/%'] = array(
+    'page callback' => 'commerce_pagosonline_confirmation',
+    'page arguments' => array(2, 3, 4), //$order_id, $sale_reference, $option
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+    'file' => 'commerce_pagosonline.inc',
+  );
+  $menu['pagosonline/transaction/view/%/%'] = array(
+    'page callback' => 'commerce_pagosonline_transaction_view',
+    'page arguments' => array(3),
+    'access callback' => TRUE,
+    //'access callback' => 'commerce_pagosonline_transaction_view_validate',
+    //'access arguments' => array(3, 4),
+    'type' => MENU_CALLBACK,
+    'file' => 'commerce_pagosonline_transaction.inc',
+  );
+  return $menu;
+}
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_pagosonline_commerce_payment_method_info() {
+  $payment_methods = array();
+  $payment_methods['pagosonline'] = array(
+    'base' => 'commerce_pagosonline',
+    'title' => t('Pagosonline pay by (Visa, Master Card, American Expres, Diners)'),
+    'short_title' => t('PagosOnline'),
+    'description' => t('Pagos Online Payments Standard'),
+    'terminal' => FALSE,
+    'offsite' => TRUE,
+    'offsite_autoredirect' => FALSE,
+  );
+  $payment_methods['pagosonline_pse'] = array(
+    'base' => 'commerce_pagosonline',
+    'title' => t('PSE (Cuenta Bancaria Ahorro/Corriente)'),
+    'short_title' => t('PagosOnline'),
+    'description' => t('Pagos Online Payments Standard'),
+    'terminal' => FALSE,
+    'offsite' => TRUE,
+    'offsite_autoredirect' => FALSE,
+  );
+  return $payment_methods;
+}
+
+/**
+ * Form Settings Pagos Online 
+ **/
+function commerce_pagosonline_settings_form($settings = NULL) {
+  module_load_include('inc', 'commerce_pagosonline');
+  $form = array();
+  $form['pagosonline_uid'] = array(
+    '#title' => t('The number of user'),
+    '#description' => t('The number of user in the system Pagosonline.net'),
+    '#type' => 'textfield',
+    '#size' => 12,
+    '#default_value' => isset($settings['pagosonline_uid']) ? $settings['pagosonline_uid'] : '',
+    '#required' => TRUE,
+  );
+  $form['pagosonline_encryption_key'] = array(
+    '#title' => t('Encryption key'),
+    '#type' => 'textfield',
+    '#default_value' => isset($settings['pagosonline_encryption_key']) ? $settings['pagosonline_encryption_key'] : '',
+    '#size' => 50,
+    '#required' => TRUE,
+  );
+  $form['pagosonline_action_url'] = array(
+    '#title' => t('Path Form Action'),    
+    '#type' => 'textfield',
+    '#size' => 50,
+    '#default_value' => isset($settings['pagosonline_action_url']) ? $settings['pagosonline_action_url'] : URL_SERVER,
+    '#required' => TRUE,
+  );
+  $form['pagosonline_action_url_test'] = array(
+    '#title' => t('Test Path Form Action'),    
+    '#type' => 'textfield',
+    '#size' => 50,
+    '#default_value' => isset($settings['pagosonline_action_url_test']) ? $settings['pagosonline_action_url_test'] : URL_SERVER_TEST,
+    '#required' => TRUE,
+  );
+  $form['pagosonline_currency_type'] = array(
+    '#title' => t('Currency Type'),
+    '#description' => t('Currency Type Enabled'),
+    '#type' => 'select',
+    '#options' => commerce_pagosonline_currencies(),
+    '#size' => 5,
+    '#multiple' => TRUE,
+    '#default_value' => isset($settings['pagosonline_currency_type']) ? $settings['pagosonline_currency_type'] : '',
+  );
+  
+  $form['pagosonline_testing'] = array(
+    '#title' => t('Test Enabled'),
+    '#type' => 'select',
+    '#options' => array(
+      '0' => t('No'),
+      '1' => t('Yes'),
+    ),
+    '#default_value' => isset($settings['pagosonline_testing']) ? $settings['pagosonline_testing'] : '',
+  );
+  return $form;
+}
+
+function commerce_pagosonline_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+}
+function commerce_pagosonline_redirect_form($form, &$form_state, $order, $payment_method) {
+  
+  $order_status = commerce_order_status_load($order->status);  
+  module_load_include('inc', 'commerce_pagosonline');
+  //Cargar total de la orden
+  $wrapper = entity_metadata_wrapper('commerce_order', $order);
+  $currency_code = $wrapper->commerce_order_total->currency_code->value();
+  $amount = number_format($wrapper->commerce_order_total->amount->value(), 2, '.', ''); //Format: 1000.00
+
+  if (!isset($payment_method['settings']['pagosonline_uid']) || empty($payment_method['settings']['pagosonline_uid'])) {
+    drupal_set_message(t('Pagos Online is not configured for use. No user Id has been specified.'), 'error');
+    return array();
+  }
+  
+  $user_id = $payment_method['settings']['pagosonline_uid'];  
+  $encryption_key = $payment_method['settings']['pagosonline_encryption_key'];
+  $sale_reference = commerce_pagosonline_get_reference($order);
+  $currency_type = 'COP';
+  
+  $signature = commerce_pagosonline_get_firm($encryption_key, $user_id, $sale_reference, $amount, $currency_type);  
+  $url_response = $order->order_id . '/' . $sale_reference . '/' . md5($order->order_id . '~' . 'RESPONSE' . '~'. $sale_reference . '~' .$payment_method['instance_id']);
+  $url_confirmation = $order->order_id . '/' . $sale_reference . '/' . md5($order->order_id . '~' . 'CONFIRMATION' . '~'. $sale_reference . '~' . $payment_method['instance_id']);
+  
+  $data = array(
+    'usuarioId' => $user_id,
+    'descripcion' => t('commerce virtual store purchase'),
+    'refVenta' => $sale_reference,
+    'valor' => $amount,
+    'baseDevolucionIva' => 0,
+    'iva' => 0,
+    'emailComprador' => $order->mail,
+    'moneda' => $currency_type,
+    'firma' => $signature,
+    'url_confirmacion' => url('pagosonline/confirmation/' . $url_confirmation, array('absolute' => TRUE)),
+    'url_respuesta' => url('pagosonline/response/' . $url_response, array('absolute' => TRUE)),
+    'extra1' => $payment_method['instance_id'],
+  );
+    
+  if (isset($payment_method['settings']['pagosonline_testing']) && $payment_method['settings']['pagosonline_testing']) {
+    $data['prueba'] = 0; //Agregar campo oculto para pruebas
+    $form['#action'] = $payment_method['settings']['pagosonline_action_url_test'];
+  }
+  else {
+    $form['#action'] = $payment_method['settings']['pagosonline_action_url'];
+  }
+
+  foreach ($data as $name => $value) {
+    $form[$name] = array('#type' => 'hidden', '#value' => $value);    
+  }
+  
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Proceed to PagosOnline'),
+  );
+  return $form;
+}
