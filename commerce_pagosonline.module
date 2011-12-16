@@ -179,7 +179,7 @@ function commerce_pagosonline_redirect_form($form, &$form_state, $order, $paymen
   );
     
   if (isset($payment_method['settings']['pagosonline_testing']) && $payment_method['settings']['pagosonline_testing']) {
-    $data['prueba'] = 0; //Agregar campo oculto para pruebas
+    $data['prueba'] = 1; //Agregar campo oculto para pruebas
     $form['#action'] = $payment_method['settings']['pagosonline_action_url_test'];
   }
   else {
