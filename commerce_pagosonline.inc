@@ -262,5 +262,5 @@ function pagosonline_get_firm($encryption_key, $user_id, $sale_reference, $value
  * Generate number reference unique
  */
 function pagosonline_get_reference($order) {
-  return 'TOTTO-' . $order->order_id;
+  return 'ALIAS-' . $order->order_id;
 }
